@@ -226,7 +226,12 @@ func (syncer *DefaultSyncer) syncOne(ctx context.Context, parent, next types.Tip
 	if err != nil {
 		return err
 	}
-	headParentCids, err := syncer.chainStore.Head().Parents()
+	head := syncer.chainStore.GetHead()
+	headTipSetAndState, err := syncer.chainStore.GetTipSetAndState(ctx, head)
+	if err != nil {
+		return err
+	}
+	headParentCids, err := headTipSetAndState.TipSet.Parents()
 	if err != nil {
 		return err
 	}
@@ -238,7 +243,7 @@ func (syncer *DefaultSyncer) syncOne(ctx context.Context, parent, next types.Tip
 		}
 	}
 
-	heavier, err := syncer.consensus.IsHeavier(ctx, next, syncer.chainStore.Head(), nextParentSt, headParentSt)
+	heavier, err := syncer.consensus.IsHeavier(ctx, next, headTipSetAndState.TipSet, nextParentSt, headParentSt)
 	if err != nil {
 		return err
 	}
@@ -251,8 +256,8 @@ func (syncer *DefaultSyncer) syncOne(ctx context.Context, parent, next types.Tip
 			return err
 		}
 		newChain = append(newChain, next)
-		if IsReorg(syncer.chainStore.Head(), newChain) {
-			logSyncer.Infof("reorg occurring while switching from %s to %s", syncer.chainStore.Head().String(), next.String())
+		if IsReorg(headTipSetAndState.TipSet, newChain) {
+			logSyncer.Infof("reorg occurring while switching from %s to %s", headTipSetAndState.TipSet.String(), next.String())
 		}
 		if err = syncer.chainStore.SetHead(ctx, next); err != nil {
 			return err
