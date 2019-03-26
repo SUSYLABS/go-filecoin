@@ -159,8 +159,8 @@ func (syncer *DefaultSyncer) collectChain(ctx context.Context, blkCids []cid.Cid
 
 // tipSetState returns the state resulting from applying the input tipset to
 // the chain.  Precondition: the tipset must be in the store
-func (syncer *DefaultSyncer) tipSetState(ctx context.Context, tsKey string) (state.Tree, error) {
-	if !syncer.chainStore.HasTipSetAndState(ctx, tsKey) {
+func (syncer *DefaultSyncer) tipSetState(ctx context.Context, tsKey types.SortedCidSet) (state.Tree, error) {
+	if !syncer.chainStore.HasTipSetAndState(ctx, tsKey.String()) {
 		return nil, errors.Wrap(ErrUnexpectedStoreState, "parent tipset must be in the store")
 	}
 	tsas, err := syncer.chainStore.GetTipSetAndState(ctx, tsKey)
@@ -185,7 +185,7 @@ func (syncer *DefaultSyncer) tipSetState(ctx context.Context, tsKey string) (sta
 func (syncer *DefaultSyncer) syncOne(ctx context.Context, parent, next types.TipSet) error {
 	// Lookup parent state. It is guaranteed by the syncer that it is in
 	// the chainStore.
-	st, err := syncer.tipSetState(ctx, parent.String())
+	st, err := syncer.tipSetState(ctx, parent.ToSortedCidSet())
 	if err != nil {
 		return err
 	}
@@ -222,7 +222,7 @@ func (syncer *DefaultSyncer) syncOne(ctx context.Context, parent, next types.Tip
 
 	// TipSet is validated and added to store, now check if it is the heaviest.
 	// If it is the heaviest update the chainStore.
-	nextParentSt, err := syncer.tipSetState(ctx, parent.String()) // call again to get a copy
+	nextParentSt, err := syncer.tipSetState(ctx, parent.ToSortedCidSet()) // call again to get a copy
 	if err != nil {
 		return err
 	}
@@ -232,7 +232,7 @@ func (syncer *DefaultSyncer) syncOne(ctx context.Context, parent, next types.Tip
 	}
 	var headParentSt state.Tree
 	if headParentCids.Len() != 0 { // head is not genesis
-		headParentSt, err = syncer.tipSetState(ctx, headParentCids.String())
+		headParentSt, err = syncer.tipSetState(ctx, headParentCids)
 		if err != nil {
 			return err
 		}
@@ -344,7 +344,7 @@ func (syncer *DefaultSyncer) HandleNewBlocks(ctx context.Context, blkCids []cid.
 	if err != nil {
 		return err
 	}
-	parentTsas, err := syncer.chainStore.GetTipSetAndState(ctx, parentCids.String())
+	parentTsas, err := syncer.chainStore.GetTipSetAndState(ctx, parentCids)
 	if err != nil {
 		return err
 	}
