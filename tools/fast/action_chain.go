@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/filecoin-project/go-filecoin/types"
+	cid "gx/ipfs/QmR8BauakNcBa3RbE4nbQu76PDiJgoQgz8AJdhJuiU4TAw/go-cid"
 )
 
 // ChainHead runs the chain head command against the filecoin process.
-func (f *Filecoin) ChainHead(ctx context.Context) ([]types.Block, error) {
-	var out []types.Block
+func (f *Filecoin) ChainHead(ctx context.Context) ([]cid.Cid, error) {
+	var out []cid.Cid
 	if err := f.RunCmdJSONWithStdin(ctx, nil, &out, "go-filecoin", "chain", "head"); err != nil {
 		return nil, err
 	}
