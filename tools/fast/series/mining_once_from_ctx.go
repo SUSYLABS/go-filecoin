@@ -4,8 +4,10 @@ import (
 	"context"
 )
 
-var CKMiningOnce struct{} = struct{}{}
+// CKMiningOnce is the key used to store the MiningOnceFunc in a context
+var CKMiningOnce = struct{}{}
 
+// MiningOnceFunc is the type for the value stored under the CKMiningOnce key
 type MiningOnceFunc func()
 
 // MiningOnceFromCtx extracts the MiningOnceFunc through key CKMiningOnce

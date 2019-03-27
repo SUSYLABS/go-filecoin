@@ -31,6 +31,7 @@ var paymentChannelCmd = &cmds.Command{
 	},
 }
 
+// CreateChannelResult type returned from CreateChannel
 type CreateChannelResult struct {
 	Cid     cid.Cid
 	GasUsed types.GasUnits
@@ -233,6 +234,7 @@ var voucherCmd = &cmds.Command{
 	},
 }
 
+// RedeemResult type returned from Redeem
 type RedeemResult struct {
 	Cid     cid.Cid
 	GasUsed types.GasUnits
@@ -330,6 +332,7 @@ var redeemCmd = &cmds.Command{
 	},
 }
 
+// ReclaimResult type returned from Reclaim
 type ReclaimResult struct {
 	Cid     cid.Cid
 	GasUsed types.GasUnits
@@ -416,6 +419,7 @@ var reclaimCmd = &cmds.Command{
 	},
 }
 
+// CloseResult type returned from Close
 type CloseResult struct {
 	Cid     cid.Cid
 	GasUsed types.GasUnits
@@ -513,6 +517,7 @@ var closeCmd = &cmds.Command{
 	},
 }
 
+// ExtendResult type returned from Extend
 type ExtendResult struct {
 	Cid     cid.Cid
 	GasUsed types.GasUnits
