@@ -48,6 +48,7 @@ func BasicFastSetup(t *testing.T, ctx context.Context, fastenvOpts fast.Environm
 
 	// Create an environment that includes a genesis block with 1MM FIL
 	env, err := fast.NewEnvironmentMemoryGenesis(big.NewInt(1000000), dir)
+	require.NoError(err)
 
 	// Setup options for nodes.
 	options := make(map[string]string)
@@ -72,8 +73,7 @@ func BasicFastSetup(t *testing.T, ctx context.Context, fastenvOpts fast.Environm
 	err = series.SetupGenesisNode(ctx, genesis, genesisMiner.Address, files.NewReaderFile(genesisMiner.Owner))
 	require.NoError(err)
 
-	var MiningOnce series.MiningOnceFunc
-	MiningOnce = func() {
+	var MiningOnce series.MiningOnceFunc = func() {
 		_, err := genesis.MiningOnce(ctx)
 		require.NoError(err)
 	}
@@ -507,6 +507,7 @@ func TestPaymentChannelReclaimSuccess(t *testing.T) {
 		require.Len(channels, 0)
 
 		balanceAfter, err := payerDaemon.WalletBalance(ctx, payerAddr)
+		require.NoError(err)
 
 		assert.Equal(balanceBefore, balanceAfter.Add(voucherAmount))
 	})
@@ -568,9 +569,11 @@ func TestPaymentChannelCloseSuccess(t *testing.T) {
 		require.Len(channels, 0)
 
 		payerBalanceAfter, err := payerDaemon.WalletBalance(ctx, payerAddr)
+		require.NoError(err)
 		assert.Equal(payerBalanceBefore.Sub(voucherAmount), payerBalanceAfter)
 
 		targetBalanceAfter, err := targetDaemon.WalletBalance(ctx, targetAddr)
+		require.NoError(err)
 		assert.Equal(targetBalanceBefore.Add(voucherAmount), targetBalanceAfter)
 	})
 }
