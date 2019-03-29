@@ -4,16 +4,18 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 	"unsafe"
 
 	"github.com/filecoin-project/go-filecoin/address"
 	"github.com/filecoin-project/go-filecoin/proofs"
 
-	dag "gx/ipfs/QmNRAuGmvnVw8urHkUZQirhu42VTiZjVWASa2aTznEMmpP/go-merkledag"
 	"gx/ipfs/QmR8BauakNcBa3RbE4nbQu76PDiJgoQgz8AJdhJuiU4TAw/go-cid"
-	uio "gx/ipfs/QmRDWTzVdbHXdtat7tVJ7YC7kRaW7rTZTEF79yykcLYa49/go-unixfs/io"
 	"gx/ipfs/QmVmDhyTTUcQXFD1rRQ64fGLMSAoaQvNH3hwuaCFAPq2hy/errors"
 	bserv "gx/ipfs/QmZsGVGCqMCNzHLNMB6q4F6yyvomqf1VxwhJwSfgo1NGaF/go-blockservice"
 	logging "gx/ipfs/QmbkT7eMTyXfpeyB3ZMxxcxg7XH8t6uXp49jqzz4HB7BGF/go-log"
@@ -151,51 +153,100 @@ func (sb *RustSectorBuilder) GetMaxUserBytesPerStagedSector() (numBytes uint64, 
 	return uint64(resPtr.max_staged_bytes_per_sector), nil
 }
 
+// mkfifo creates a FIFO pipe and returns its path. The FIFO pipe
+// is used to stream bytes to rust-fil-proofs from Go during the piece-adding
+// flow.
+func mkfifo(pi *PieceInfo) (string, error) {
+	pieceKey := pi.Ref.String()
+
+	// clean up anything left over from previous run
+	os.Remove(pieceKey) // nolint: errcheck
+
+	// subdirectory in which we create named pipes
+	tmpDir, err := ioutil.TempDir("", "named-pipes")
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create temp dir")
+	}
+
+	// create named pipe
+	piecePath := filepath.Join(tmpDir, pieceKey)
+	if syscall.Mkfifo(piecePath, 0600) != nil {
+		return "", errors.Wrap(err, "mkfifo failed")
+	}
+
+	return piecePath, nil
+}
+
 // AddPiece writes the given piece into an unsealed sector and returns the id
 // of that sector.
 func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pi *PieceInfo) (sectorID uint64, err error) {
 	defer elapsed("AddPiece")()
 
-	pieceKey := pi.Ref.String()
-	dagService := dag.NewDAGService(sb.blockService)
+	// holds any errors encountered when streaming bytes
+	streamErr := make(chan error, 1)
 
-	rootIpldNode, err := dagService.Get(ctx, pi.Ref)
+	// signals successful data xfer
+	streamDone := make(chan interface{}, 1)
+
+	// create named pipe for piece transfer to rust-fil-proofs
+	pipePath, err := mkfifo(pi)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to create transfer pipe")
 	}
+	defer os.Remove(pipePath) // nolint: errcheck
 
-	r, err := uio.NewDagReader(ctx, rootIpldNode, dagService)
-	if err != nil {
-		return 0, err
-	}
+	// goroutine attempts to copy bytes from piece's reader to the named pipe
+	go func() {
+		// open pipe for writing
+		file, err := os.OpenFile(pipePath, os.O_WRONLY, os.ModeNamedPipe)
+		if err != nil {
+			streamErr <- errors.Wrap(err, "could not open file in write-only mode")
+			return
+		}
+		defer file.Close() // nolint: errcheck
 
-	pieceBytes := make([]byte, pi.Size)
-	_, err = r.Read(pieceBytes)
-	if err != nil {
-		return 0, errors.Wrapf(err, "error reading piece bytes into buffer")
-	}
+		n, err := io.Copy(file, pi.BytesReader)
+		if err != nil {
+			streamErr <- errors.Wrap(err, "failed to copy to pipe")
+			return
+		}
 
-	cPieceKey := C.CString(pieceKey)
+		if uint64(n) != pi.Size {
+			streamErr <- errors.Errorf("expected to write %d bytes but wrote %d", pi.Size, n)
+			return
+		}
+
+		streamDone <- struct{}{}
+	}()
+
+	cPieceKey := C.CString(pi.Ref.String())
 	defer C.free(unsafe.Pointer(cPieceKey))
 
-	cPieceBytes := C.CBytes(pieceBytes)
-	defer C.free(cPieceBytes)
+	cPiecePath := C.CString(pipePath)
+	defer C.free(unsafe.Pointer(cPiecePath))
 
 	resPtr := (*C.AddPieceResponse)(unsafe.Pointer(C.add_piece(
 		(*C.SectorBuilder)(sb.ptr),
 		cPieceKey,
-		(*C.uint8_t)(cPieceBytes),
-		C.size_t(len(pieceBytes)),
+		C.uint64_t(pi.Size),
+		cPiecePath,
 	)))
 	defer C.destroy_add_piece_response(resPtr)
 
-	if resPtr.status_code != 0 {
-		return 0, errors.New(C.GoString(resPtr.error_msg))
+	select {
+	case <-ctx.Done():
+		return 0, errors.Errorf("context canceled while streaming piece-bytes")
+	case err := <-streamErr:
+		return 0, errors.Wrap(err, "error streaming piece-bytes")
+	case <-streamDone:
+		if resPtr.status_code != 0 {
+			return 0, errors.New(C.GoString(resPtr.error_msg))
+		}
+
+		go sb.sealStatusPoller.addSectorID(uint64(resPtr.sector_id))
+
+		return uint64(resPtr.sector_id), nil
 	}
-
-	go sb.sealStatusPoller.addSectorID(uint64(resPtr.sector_id))
-
-	return uint64(resPtr.sector_id), nil
 }
 
 func (sb *RustSectorBuilder) findSealedSectorMetadata(sectorID uint64) (*SealedSectorMetadata, error) {

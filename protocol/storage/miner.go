@@ -11,6 +11,7 @@ import (
 
 	dag "gx/ipfs/QmNRAuGmvnVw8urHkUZQirhu42VTiZjVWASa2aTznEMmpP/go-merkledag"
 	"gx/ipfs/QmR8BauakNcBa3RbE4nbQu76PDiJgoQgz8AJdhJuiU4TAw/go-cid"
+	uio "gx/ipfs/QmRDWTzVdbHXdtat7tVJ7YC7kRaW7rTZTEF79yykcLYa49/go-unixfs/io"
 	inet "gx/ipfs/QmTGxDz2CjBucFzPNTiWwzQmTWdrBnzqbqrMucDYMsjuPb/go-libp2p-net"
 	"gx/ipfs/QmUadX5EcvrBmxAV9sE7wUWtWSqxns5K84qKJBixmcT1w9/go-datastore"
 	"gx/ipfs/QmVmDhyTTUcQXFD1rRQ64fGLMSAoaQvNH3hwuaCFAPq2hy/errors"
@@ -425,9 +426,24 @@ func (sm *Miner) processStorageDeal(c cid.Cid) {
 		}
 	}
 
+	dagService := dag.NewDAGService(sm.node.BlockService())
+
+	rootIpldNode, err := dagService.Get(ctx, d.Proposal.PieceRef)
+	if err != nil {
+		fail("internal error", fmt.Sprintf("failed to add piece: %s", err))
+		return
+	}
+
+	r, err := uio.NewDagReader(ctx, rootIpldNode, dagService)
+	if err != nil {
+		fail("internal error", fmt.Sprintf("failed to add piece: %s", err))
+		return
+	}
+
 	pi := &sectorbuilder.PieceInfo{
-		Ref:  d.Proposal.PieceRef,
-		Size: d.Proposal.Size.Uint64(),
+		Ref:         d.Proposal.PieceRef,
+		Size:        d.Proposal.Size.Uint64(),
+		BytesReader: r,
 	}
 
 	// There is a race here that requires us to use dealsAwaitingSeal below. If the

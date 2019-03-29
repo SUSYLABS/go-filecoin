@@ -1,6 +1,7 @@
 package testing
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"io"
@@ -74,8 +75,9 @@ func (h Harness) CreatePieceInfo(pieceData []byte) (*sb.PieceInfo, error) {
 	}
 
 	return &sb.PieceInfo{
-		Ref:  data.Cid(),
-		Size: uint64(len(pieceData)),
+		Ref:         data.Cid(),
+		Size:        uint64(len(pieceData)),
+		BytesReader: bytes.NewReader(pieceData),
 	}, nil
 }
 
