@@ -27,7 +27,7 @@ type SectorBuilder interface {
 	// TODO: Replace this method with something that accepts a piece cid and a
 	// value which represents the number of bytes in the piece and returns a
 	// sector id (to which piece bytes will be written) and a Writer.
-	AddPiece(ctx context.Context, pi *PieceInfo) (sectorID uint64, err error)
+	AddPiece(ctx context.Context, pieceRef cid.Cid, pieceSize uint64, pieceReader io.Reader) (sectorID uint64, err error)
 
 	// ReadPieceFromSealedSector produces a Reader used to get original
 	// piece-bytes from a sealed sector.

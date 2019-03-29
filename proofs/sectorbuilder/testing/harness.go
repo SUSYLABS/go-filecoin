@@ -58,7 +58,7 @@ func (h Harness) AddPiece(ctx context.Context, pieceData []byte) (uint64, cid.Ci
 		return 0, cid.Undef, err
 	}
 
-	sectorID, err := h.SectorBuilder.AddPiece(ctx, pieceInfo)
+	sectorID, err := h.SectorBuilder.AddPiece(ctx, pieceInfo.Ref, pieceInfo.Size, pieceInfo.BytesReader)
 	if err != nil {
 		return 0, cid.Undef, err
 	}

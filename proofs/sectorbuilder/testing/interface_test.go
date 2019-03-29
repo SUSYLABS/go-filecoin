@@ -188,7 +188,7 @@ func TestSectorBuilder(t *testing.T) {
 		info, err := h.CreatePieceInfo(inputBytes)
 		require.NoError(t, err)
 
-		sectorID, err := h.SectorBuilder.AddPiece(context.Background(), info)
+		sectorID, err := h.SectorBuilder.AddPiece(context.Background(), info.Ref, info.Size, info.BytesReader)
 		require.NoError(t, err)
 
 		// Sealing can take 180+ seconds on an i7 MacBook Pro. We are sealing
@@ -297,7 +297,7 @@ func TestSectorBuilder(t *testing.T) {
 		info, err := h.CreatePieceInfo(inputBytes)
 		require.NoError(t, err)
 
-		sectorID, err := h.SectorBuilder.AddPiece(context.Background(), info)
+		sectorID, err := h.SectorBuilder.AddPiece(context.Background(), info.Ref, info.Size, info.BytesReader)
 		require.NoError(t, err)
 
 		timeout := time.After(MaxTimeToSealASector + MaxTimeToGenerateSectorPoSt)

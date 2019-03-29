@@ -1,3 +1,5 @@
+// +build !windows
+
 package sectorbuilder
 
 import (
@@ -156,11 +158,11 @@ func (sb *RustSectorBuilder) GetMaxUserBytesPerStagedSector() (numBytes uint64, 
 // mkfifo creates a FIFO pipe and returns its path. The FIFO pipe
 // is used to stream bytes to rust-fil-proofs from Go during the piece-adding
 // flow.
-func mkfifo(pi *PieceInfo) (string, error) {
-	pieceKey := pi.Ref.String()
+func mkfifo(pieceRef cid.Cid) (string, error) {
+	key := pieceRef.String()
 
 	// clean up anything left over from previous run
-	os.Remove(pieceKey) // nolint: errcheck
+	os.Remove(key) // nolint: errcheck
 
 	// subdirectory in which we create named pipes
 	tmpDir, err := ioutil.TempDir("", "named-pipes")
@@ -169,7 +171,7 @@ func mkfifo(pi *PieceInfo) (string, error) {
 	}
 
 	// create named pipe
-	piecePath := filepath.Join(tmpDir, pieceKey)
+	piecePath := filepath.Join(tmpDir, key)
 	if syscall.Mkfifo(piecePath, 0600) != nil {
 		return "", errors.Wrap(err, "mkfifo failed")
 	}
@@ -179,7 +181,7 @@ func mkfifo(pi *PieceInfo) (string, error) {
 
 // AddPiece writes the given piece into an unsealed sector and returns the id
 // of that sector.
-func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pi *PieceInfo) (sectorID uint64, err error) {
+func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pieceRef cid.Cid, pieceSize uint64, pieceReader io.Reader) (sectorID uint64, err error) {
 	defer elapsed("AddPiece")()
 
 	// holds any errors encountered when streaming bytes
@@ -189,7 +191,7 @@ func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pi *PieceInfo) (secto
 	streamDone := make(chan interface{}, 1)
 
 	// create named pipe for piece transfer to rust-fil-proofs
-	pipePath, err := mkfifo(pi)
+	pipePath, err := mkfifo(pieceRef)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to create transfer pipe")
 	}
@@ -205,21 +207,21 @@ func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pi *PieceInfo) (secto
 		}
 		defer file.Close() // nolint: errcheck
 
-		n, err := io.Copy(file, pi.BytesReader)
+		n, err := io.Copy(file, pieceReader)
 		if err != nil {
 			streamErr <- errors.Wrap(err, "failed to copy to pipe")
 			return
 		}
 
-		if uint64(n) != pi.Size {
-			streamErr <- errors.Errorf("expected to write %d bytes but wrote %d", pi.Size, n)
+		if uint64(n) != pieceSize {
+			streamErr <- errors.Errorf("expected to write %d bytes but wrote %d", pieceSize, n)
 			return
 		}
 
 		streamDone <- struct{}{}
 	}()
 
-	cPieceKey := C.CString(pi.Ref.String())
+	cPieceKey := C.CString(pieceRef.String())
 	defer C.free(unsafe.Pointer(cPieceKey))
 
 	cPiecePath := C.CString(pipePath)
@@ -228,7 +230,7 @@ func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pi *PieceInfo) (secto
 	resPtr := (*C.AddPieceResponse)(unsafe.Pointer(C.add_piece(
 		(*C.SectorBuilder)(sb.ptr),
 		cPieceKey,
-		C.uint64_t(pi.Size),
+		C.uint64_t(pieceSize),
 		cPiecePath,
 	)))
 	defer C.destroy_add_piece_response(resPtr)
