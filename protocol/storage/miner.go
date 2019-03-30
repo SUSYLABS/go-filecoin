@@ -440,12 +440,6 @@ func (sm *Miner) processStorageDeal(c cid.Cid) {
 		return
 	}
 
-	pi := &sectorbuilder.PieceInfo{
-		Ref:         d.Proposal.PieceRef,
-		Size:        d.Proposal.Size.Uint64(),
-		BytesReader: r,
-	}
-
 	// There is a race here that requires us to use dealsAwaitingSeal below. If the
 	// sector gets sealed and OnCommitmentAddedToChain is called right after
 	// AddPiece returns but before we record the sector/deal mapping we might
@@ -455,7 +449,7 @@ func (sm *Miner) processStorageDeal(c cid.Cid) {
 	//
 	// Also, this pattern of not being able to set up book-keeping ahead of
 	// the call is inelegant.
-	sectorID, err := sm.node.SectorBuilder().AddPiece(ctx, pi)
+	sectorID, err := sm.node.SectorBuilder().AddPiece(ctx, d.Proposal.PieceRef, d.Proposal.Size.Uint64(), r)
 	if err != nil {
 		fail("failed to submit seal proof", fmt.Sprintf("failed to add piece: %s", err))
 		return
