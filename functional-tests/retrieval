@@ -8,7 +8,6 @@ source "$DIR/lib/helpers.bash"
 
 go run ./build/*.go build
 
-export GO_FILECOIN_LOG_LEVEL=3
 export FILECOIN_PROOFS_FAST_DELAY_SECONDS=1
 
 if [ -z "$1" ]; then
