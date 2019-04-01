@@ -86,7 +86,7 @@ function start_daemon {
     --repodir="$1" \
     --block-time="${BLOCK_TIME}" \
     --cmdapiaddr=/ip4/127.0.0.1/tcp/"$2" \
-    --swarmlisten=/ip4/127.0.0.1/tcp/"$3" &
+    --swarmlisten=/ip4/127.0.0.1/tcp/"$3" 2>&1 &
 }
 
 function get_first_address {
