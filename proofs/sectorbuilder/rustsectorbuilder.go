@@ -7,15 +7,14 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"time"
 	"unsafe"
 
 	"github.com/filecoin-project/go-filecoin/address"
 	"github.com/filecoin-project/go-filecoin/proofs"
+	"github.com/filecoin-project/go-filecoin/proofs/sectorbuilder/bytesink"
 
 	"gx/ipfs/QmR8BauakNcBa3RbE4nbQu76PDiJgoQgz8AJdhJuiU4TAw/go-cid"
 	"gx/ipfs/QmVmDhyTTUcQXFD1rRQ64fGLMSAoaQvNH3hwuaCFAPq2hy/errors"
@@ -155,37 +154,6 @@ func (sb *RustSectorBuilder) GetMaxUserBytesPerStagedSector() (numBytes uint64, 
 	return uint64(resPtr.max_staged_bytes_per_sector), nil
 }
 
-// createFifo creates a FIFO pipe and returns its path. The FIFO pipe is used to
-// stream bytes to rust-fil-proofs from Go during the piece-adding flow. Writes
-// to the pipe are buffered automatically by the OS; the size of the buffer
-// varies (see PIPE_BUF in pipe(2) and pipe(7)).
-func createFifo(pieceRef cid.Cid) (string, error) {
-	key := pieceRef.String()
-
-	// clean up anything left over from previous run
-	os.Remove(key) // nolint: errcheck
-
-	// subdirectory in which we create named pipes
-	tmpDir, err := ioutil.TempDir("", "named-pipes")
-	if err != nil {
-		return "", errors.Wrap(err, "failed to create temp dir")
-	}
-
-	// create named pipe
-	piecePath := filepath.Join(tmpDir, key)
-	if syscall.Mkfifo(piecePath, 0600) != nil {
-		return "", errors.Wrap(err, "mkfifo failed")
-	}
-
-	return piecePath, nil
-}
-
-// openFifoWr opens a named FIFO pipe in read/write mode and returns a handle to
-// the file.
-func openFifoReadWrite(path string) (*os.File, error) {
-	return os.OpenFile(path, os.O_WRONLY, os.ModeNamedPipe)
-}
-
 // AddPiece writes the given piece into an unsealed sector and returns the id
 // of that sector.
 func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pieceRef cid.Cid, pieceSize uint64, pieceReader io.Reader) (sectorID uint64, err error) {
@@ -200,23 +168,22 @@ func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pieceRef cid.Cid, pie
 	// as streamErr, above.
 	streamDone := make(chan interface{}, 1)
 
-	// create named pipe for piece transfer to rust-fil-proofs
-	pipePath, err := createFifo(pieceRef)
+	piecePath, err := byteSinkPath(pieceRef)
 	if err != nil {
-		return 0, errors.Wrap(err, "failed to create transfer pipe")
+		return 0, err
 	}
-	defer os.Remove(pipePath) // nolint: errcheck
 
-	// goroutine attempts to copy bytes from piece's reader to the named pipe
+	// goroutine attempts to copy bytes from piece's reader to the sink
 	go func() {
-		file, err := openFifoReadWrite(pipePath)
-		if err != nil {
-			streamErr <- errors.Wrap(err, "could not open file in write-only mode")
-			return
-		}
-		defer file.Close() // nolint: errcheck
+		sink, err := bytesink.NewByteSink(piecePath)
+		defer func() {
+			cerr := sink.Close()
+			if err == nil {
+				err = cerr
+			}
+		}()
 
-		n, err := io.Copy(file, pieceReader)
+		n, err := io.Copy(sink, pieceReader)
 		if err != nil {
 			streamErr <- errors.Wrap(err, "failed to copy to pipe")
 			return
@@ -233,7 +200,7 @@ func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pieceRef cid.Cid, pie
 	cPieceKey := C.CString(pieceRef.String())
 	defer C.free(unsafe.Pointer(cPieceKey))
 
-	cPiecePath := C.CString(pipePath)
+	cPiecePath := C.CString(piecePath)
 	defer C.free(unsafe.Pointer(cPiecePath))
 
 	resPtr := (*C.AddPieceResponse)(unsafe.Pointer(C.add_piece(
@@ -487,4 +454,14 @@ func goPieceInfos(src *C.FFIPieceMetadata, size C.size_t) ([]*PieceInfo, error) 
 	}
 
 	return ps, nil
+}
+
+// byteSinkPath creates a temporary file to which piece bytes will be copied.
+func byteSinkPath(pieceRef cid.Cid) (string, error) {
+	tmpDir, err := ioutil.TempDir("", "piece-xfer")
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create temp dir")
+	}
+
+	return filepath.Join(tmpDir, pieceRef.String()), nil
 }
