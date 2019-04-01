@@ -185,10 +185,10 @@ func TestSectorBuilder(t *testing.T) {
 		defer h.Close()
 
 		inputBytes := RequireRandomBytes(t, h.MaxBytesPerSector)
-		info, err := h.CreatePieceInfo(inputBytes)
+		ref, size, reader, err := h.CreateAddPieceArgs(inputBytes)
 		require.NoError(t, err)
 
-		sectorID, err := h.SectorBuilder.AddPiece(context.Background(), info.Ref, info.Size, info.BytesReader)
+		sectorID, err := h.SectorBuilder.AddPiece(context.Background(), ref, size, reader)
 		require.NoError(t, err)
 
 		// Sealing can take 180+ seconds on an i7 MacBook Pro. We are sealing
@@ -215,7 +215,7 @@ func TestSectorBuilder(t *testing.T) {
 			t.Fatalf("timed out waiting for seal to complete")
 		}
 
-		reader, err := h.SectorBuilder.ReadPieceFromSealedSector(info.Ref)
+		reader, err = h.SectorBuilder.ReadPieceFromSealedSector(ref)
 		require.NoError(t, err)
 
 		outputBytes, err := ioutil.ReadAll(reader)
@@ -294,10 +294,10 @@ func TestSectorBuilder(t *testing.T) {
 		defer h.Close()
 
 		inputBytes := RequireRandomBytes(t, h.MaxBytesPerSector)
-		info, err := h.CreatePieceInfo(inputBytes)
+		ref, size, reader, err := h.CreateAddPieceArgs(inputBytes)
 		require.NoError(t, err)
 
-		sectorID, err := h.SectorBuilder.AddPiece(context.Background(), info.Ref, info.Size, info.BytesReader)
+		sectorID, err := h.SectorBuilder.AddPiece(context.Background(), ref, size, reader)
 		require.NoError(t, err)
 
 		timeout := time.After(MaxTimeToSealASector + MaxTimeToGenerateSectorPoSt)

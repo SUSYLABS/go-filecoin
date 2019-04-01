@@ -75,9 +75,8 @@ type SectorSealResult struct {
 
 // PieceInfo is information about a filecoin piece
 type PieceInfo struct {
-	Ref         cid.Cid `json:"ref"`
-	Size        uint64  `json:"size"` // TODO: use BytesAmount
-	BytesReader io.Reader
+	Ref  cid.Cid `json:"ref"`
+	Size uint64  `json:"size"` // TODO: use BytesAmount
 }
 
 // SealedSectorMetadata is a sector that has been sealed by the PoRep setup process
