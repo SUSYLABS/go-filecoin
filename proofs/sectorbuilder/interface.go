@@ -34,9 +34,9 @@ type SectorBuilder interface {
 
 	// SectorSealResults returns an unbuffered channel that is sent a value
 	// whenever sealing completes. All calls to SectorSealResults will get the
-	// same channel. Values will be either a *SealedSectorMetadata or an error. A
-	// *SealedSectorMetadata will be sent to the returned channel only once, regardless
-	// of the number of times SectorSealResults is called.
+	// same channel. Values will be either a *SealedSectorMetadata or an error.
+	// A *SealedSectorMetadata will be sent to the returned channel only once,
+	// regardless of the number of times SectorSealResults is called.
 	SectorSealResults() <-chan SectorSealResult
 
 	// GetMaxUserBytesPerStagedSector produces the number of user piece-bytes
