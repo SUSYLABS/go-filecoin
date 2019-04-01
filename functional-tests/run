@@ -9,6 +9,4 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 go test -v "./$(basename $DIR)/..." -functional
 
 # Shell Tests
-. $DIR/retrieval
-
-
+GO_FILECOIN_LOG_LEVEL=5 .  $DIR/retrieval
