@@ -183,6 +183,7 @@ func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pieceRef cid.Cid, pie
 			}
 		}()
 
+		log.Debugf("copying bytes from piece reader to sink (piecePath=%s)", piecePath)
 		n, err := io.Copy(sink, pieceReader)
 		if err != nil {
 			streamErr <- errors.Wrap(err, "failed to copy to pipe")
@@ -194,6 +195,7 @@ func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pieceRef cid.Cid, pie
 			return
 		}
 
+		log.Debugf("goroutine successfully copied all bytes to sink (piecePath=%s)", piecePath)
 		streamDone <- struct{}{}
 	}()
 
@@ -213,15 +215,26 @@ func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pieceRef cid.Cid, pie
 
 	select {
 	case <-ctx.Done():
-		return 0, errors.Errorf("context canceled while streaming piece-bytes")
+		msg := "context canceled while streaming piece-bytes (piecePath=%s)"
+		log.Errorf(msg, piecePath)
+
+		return 0, errors.Errorf(msg, piecePath)
 	case err := <-streamErr:
-		return 0, errors.Wrap(err, "error streaming piece-bytes")
+		msg := "error streaming piece-bytes (piecePath=%s)"
+		log.Errorf(msg, piecePath)
+
+		return 0, errors.Wrapf(err, msg, piecePath)
 	case <-streamDone:
 		if resPtr.status_code != 0 {
+			msg := "CGO add_piece returned an error (error_msg=%s, piecePath=%s)"
+			log.Errorf(msg, C.GoString(resPtr.error_msg), piecePath)
+
 			return 0, errors.New(C.GoString(resPtr.error_msg))
 		}
 
 		go sb.sealStatusPoller.addSectorID(uint64(resPtr.sector_id))
+
+		log.Infof("add piece complete (pieceRef=%s, sectorId=%d, piecePath=%s)", pieceRef.String(), uint64(resPtr.sector_id), piecePath)
 
 		return uint64(resPtr.sector_id), nil
 	}
