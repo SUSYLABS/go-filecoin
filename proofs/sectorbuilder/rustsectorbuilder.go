@@ -155,10 +155,11 @@ func (sb *RustSectorBuilder) GetMaxUserBytesPerStagedSector() (numBytes uint64, 
 	return uint64(resPtr.max_staged_bytes_per_sector), nil
 }
 
-// mkfifo creates a FIFO pipe and returns its path. The FIFO pipe
-// is used to stream bytes to rust-fil-proofs from Go during the piece-adding
-// flow.
-func mkfifo(pieceRef cid.Cid) (string, error) {
+// createFifo creates a FIFO pipe and returns its path. The FIFO pipe is used to
+// stream bytes to rust-fil-proofs from Go during the piece-adding flow. Writes
+// to the pipe are buffered automatically by the OS; the size of the buffer
+// varies (see PIPE_BUF in pipe(2) and pipe(7)).
+func createFifo(pieceRef cid.Cid) (string, error) {
 	key := pieceRef.String()
 
 	// clean up anything left over from previous run
@@ -179,19 +180,28 @@ func mkfifo(pieceRef cid.Cid) (string, error) {
 	return piecePath, nil
 }
 
+// openFifoWr opens a named FIFO pipe in read/write mode and returns a handle to
+// the file.
+func openFifoReadWrite(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_WRONLY, os.ModeNamedPipe)
+}
+
 // AddPiece writes the given piece into an unsealed sector and returns the id
 // of that sector.
 func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pieceRef cid.Cid, pieceSize uint64, pieceReader io.Reader) (sectorID uint64, err error) {
 	defer elapsed("AddPiece")()
 
-	// holds any errors encountered when streaming bytes
+	// streamErr holds any error encountered when streaming bytes. The channel
+	// is buffered so that the goroutine can exit and close the pipe, which
+	// unblocks the CGO call.
 	streamErr := make(chan error, 1)
 
-	// signals successful data xfer
+	// streamDone signals successful data transfer. Buffered for the same reason
+	// as streamErr, above.
 	streamDone := make(chan interface{}, 1)
 
 	// create named pipe for piece transfer to rust-fil-proofs
-	pipePath, err := mkfifo(pieceRef)
+	pipePath, err := createFifo(pieceRef)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to create transfer pipe")
 	}
@@ -199,8 +209,7 @@ func (sb *RustSectorBuilder) AddPiece(ctx context.Context, pieceRef cid.Cid, pie
 
 	// goroutine attempts to copy bytes from piece's reader to the named pipe
 	go func() {
-		// open pipe for writing
-		file, err := os.OpenFile(pipePath, os.O_WRONLY, os.ModeNamedPipe)
+		file, err := openFifoReadWrite(pipePath)
 		if err != nil {
 			streamErr <- errors.Wrap(err, "could not open file in write-only mode")
 			return
